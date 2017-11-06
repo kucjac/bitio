@@ -7,30 +7,8 @@ Reader interface definition and implementation.
 package bitio
 
 import (
-	"bufio"
 	"io"
 )
-
-// Reader is the bit reader interface.
-type Reader interface {
-	// Reader is an io.Reader
-	io.Reader
-
-	// Reader is also an io.ByteReader.
-	// ReadByte reads the next 8 bits and returns them as a byte.
-	io.ByteReader
-
-	// ReadBits reads n bits and returns them as the lowest n bits of u.
-	ReadBits(n byte) (u uint64, err error)
-
-	// ReadBool reads the next bit, and returns true if it is 1.
-	ReadBool() (b bool, err error)
-
-	// Align aligns the bit stream to a byte boundary,
-	// so next read will read/use data from the next byte.
-	// Returns the number of unread / skipped bits.
-	Align() (skipped byte)
-}
 
 // An io.Reader and io.ByteReader at the same time.
 type readerAndByteReader interface {
@@ -39,39 +17,33 @@ type readerAndByteReader interface {
 }
 
 // reader is the bit reader implementation.
-type reader struct {
-	in    readerAndByteReader
-	cache byte // unread bits are stored here
-	bits  byte // number of unread bits in cache
+type Reader struct {
+	in           []byte
+	cache        byte // unread bits are stored here
+	bits         byte // number of unread bits in cache
+	r, w         int  // buf read and write positions
+	err          error
+	lastByte     int
+	lastRuneSize int
 }
 
-// NewReader returns a new Reader using the specified io.Reader as the input (source).
-func NewReader(in io.Reader) Reader {
-	var bin readerAndByteReader
-	bin, ok := in.(readerAndByteReader)
-	if !ok {
-		bin = bufio.NewReader(in)
-	}
-	return &reader{in: bin}
+// NewReader returns a new Reader using the specified byte slice as the input (source).
+func NewReader(p []byte) *Reader {
+	return &Reader{in: p}
 }
 
-// Read implements io.Reader.
-func (r *reader) Read(p []byte) (n int, err error) {
-	// r.bits will be the same after reading 8 bits, so we don't need to update that.
-	if r.bits == 0 {
-		return r.in.Read(p)
+func (r *Reader) readBufferByte() (b byte, err error) {
+	if r.r >= len(r.in) {
+		return 0, io.EOF
 	}
-
-	for ; n < len(p); n++ {
-		if p[n], err = r.readUnalignedByte(); err != nil {
-			return
-		}
-	}
-
-	return
+	r.lastRuneSize = -1
+	c := r.in[r.r]
+	r.r++
+	r.lastByte = int(c)
+	return c, nil
 }
 
-func (r *reader) ReadBits(n byte) (u uint64, err error) {
+func (r *Reader) ReadBits(n byte) (u uint64, err error) {
 	// Some optimization, frequent cases
 	if n < r.bits {
 		// cache has all needed bits, and there are some extra which will be left in cache
@@ -90,7 +62,7 @@ func (r *reader) ReadBits(n byte) (u uint64, err error) {
 		}
 		// Read whole bytes
 		for n >= 8 {
-			b, err2 := r.in.ReadByte()
+			b, err2 := r.readBufferByte()
 			if err2 != nil {
 				return 0, err2
 			}
@@ -99,7 +71,7 @@ func (r *reader) ReadBits(n byte) (u uint64, err error) {
 		}
 		// Read last fraction, if any
 		if n > 0 {
-			if r.cache, err = r.in.ReadByte(); err != nil {
+			if r.cache, err = r.readBufferByte(); err != nil {
 				return 0, err
 			}
 			shift := 8 - n
@@ -118,20 +90,20 @@ func (r *reader) ReadBits(n byte) (u uint64, err error) {
 }
 
 // ReadByte implements io.ByteReader.
-func (r *reader) ReadByte() (b byte, err error) {
+func (r *Reader) ReadByte() (b byte, err error) {
 	// r.bits will be the same after reading 8 bits, so we don't need to update that.
 	if r.bits == 0 {
-		return r.in.ReadByte()
+		return r.readBufferByte()
 	}
 	return r.readUnalignedByte()
 }
 
 // readUnalignedByte reads the next 8 bits which are (may be) unaligned and returns them as a byte.
-func (r *reader) readUnalignedByte() (b byte, err error) {
+func (r *Reader) readUnalignedByte() (b byte, err error) {
 	// r.bits will be the same after reading 8 bits, so we don't need to update that.
 	bits := r.bits
 	b = r.cache << (8 - bits)
-	r.cache, err = r.in.ReadByte()
+	r.cache, err = r.readBufferByte()
 	if err != nil {
 		return 0, err
 	}
@@ -140,9 +112,9 @@ func (r *reader) readUnalignedByte() (b byte, err error) {
 	return
 }
 
-func (r *reader) ReadBool() (b bool, err error) {
+func (r *Reader) ReadBool() (b bool, err error) {
 	if r.bits == 0 {
-		r.cache, err = r.in.ReadByte()
+		r.cache, err = r.readBufferByte()
 		if err != nil {
 			return
 		}
@@ -157,7 +129,7 @@ func (r *reader) ReadBool() (b bool, err error) {
 	return
 }
 
-func (r *reader) Align() (skipped byte) {
+func (r *Reader) Align() (skipped byte) {
 	skipped = r.bits
 	r.bits = 0 // no need to clear cache, will be overwritten on next read
 	return

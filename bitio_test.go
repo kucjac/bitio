@@ -14,7 +14,7 @@ import (
 func TestReader(t *testing.T) {
 	data := []byte{3, 255, 0xcc, 0x1a, 0xbc, 0xde, 0x80, 0x01, 0x02, 0xf8, 0x08, 0xf0}
 
-	r := NewReader(bytes.NewBuffer(data))
+	r := NewReader(data)
 	eq, expEq := mighty.EqExpEq(t)
 
 	expEq(byte(3))(r.ReadByte())
@@ -31,14 +31,14 @@ func TestReader(t *testing.T) {
 
 	eq(byte(6), r.Align())
 
-	s := make([]byte, 2)
-	expEq(2)(r.Read(s))
-	eq(true, bytes.Equal(s, []byte{0x01, 0x02}))
+	// s := make([]byte, 2)
+	// expEq(2)(r.Read(s))
+	// eq(true, bytes.Equal(s, []byte{0x01, 0x02}))
 
-	expEq(uint64(0xf))(r.ReadBits(4))
+	// expEq(uint64(0xf))(r.ReadBits(4))
 
-	expEq(2)(r.Read(s))
-	eq(true, bytes.Equal(s, []byte{0x80, 0x8f}))
+	// expEq(2)(r.Read(s))
+	// eq(true, bytes.Equal(s, []byte{0x80, 0x8f}))
 }
 
 func TestWriter(t *testing.T) {
@@ -79,7 +79,7 @@ func TestWriter(t *testing.T) {
 func TestReaderEOF(t *testing.T) {
 	eq := mighty.Eq(t)
 
-	r := NewReader(bytes.NewBuffer([]byte{0x01}))
+	r := NewReader([]byte{0x01})
 
 	b, err := r.ReadByte()
 	eq(byte(1), b)
@@ -90,9 +90,9 @@ func TestReaderEOF(t *testing.T) {
 	eq(io.EOF, err)
 	_, err = r.ReadBits(1)
 	eq(io.EOF, err)
-	n, err := r.Read(make([]byte, 2))
-	eq(0, n)
-	eq(io.EOF, err)
+	// n, err := r.Read(make([]byte, 2))
+	// eq(0, n)
+	// eq(io.EOF, err)
 }
 
 func TestReaderEOF2(t *testing.T) {
@@ -100,33 +100,23 @@ func TestReaderEOF2(t *testing.T) {
 
 	var err error
 
-	r := NewReader(bytes.NewBuffer([]byte{0x01}))
+	r := NewReader([]byte{0x01})
 	_, err = r.ReadBits(17)
 	eq(io.EOF, err)
 
 	// Byte spreading byte boundary (readUnalignedByte)
-	r = NewReader(bytes.NewBuffer([]byte{0xc1, 0x01}))
+	r = NewReader([]byte{0xc1, 0x01})
 	expEq(true)(r.ReadBool())
 	expEq(byte(0x82))(r.ReadByte())
 	// readUnalignedByte resulting in EOF
 	_, err = r.ReadByte()
 	eq(io.EOF, err)
 
-	r = NewReader(bytes.NewBuffer([]byte{0xc1, 0x01}))
+	r = NewReader([]byte{0xc1, 0x01})
 	expEq(true)(r.ReadBool())
-	got, err := r.Read(make([]byte, 2))
-	eq(1, got)
-	eq(io.EOF, err)
-}
-
-type nonByteReaderWriter struct {
-	io.Reader
-	io.Writer
-}
-
-func TestNonByteReaderWriter(t *testing.T) {
-	NewReader(nonByteReaderWriter{})
-	NewWriter(nonByteReaderWriter{})
+	// got, err := r.Read(make([]byte, 2))
+	// eq(1, got)
+	// eq(io.EOF, err)
 }
 
 type errWriter struct {
@@ -208,7 +198,7 @@ func TestChain(t *testing.T) {
 
 	eq(nil, w.Close())
 
-	r := NewReader(bytes.NewBuffer(b.Bytes()))
+	r := NewReader(b.Bytes())
 
 	// Reading (verifying)
 	for i, v := range expected {
