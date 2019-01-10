@@ -7,21 +7,28 @@ Reader interface definition and implementation.
 package bitio
 
 import (
+	"errors"
 	"io"
 )
 
 // An io.Reader and io.ByteReader at the same time.
-type readerAndByteReader interface {
+type readSeekerAndByteReader interface {
 	io.Reader
 	io.ByteReader
+	io.Seeker
 }
 
-// reader is the bit reader implementation.
+type BitReader interface {
+	ReadBits(n byte)
+}
+
+// Reader is the bit reader implementation.
+// Implements io.Reader, io.ByteReader, io.Seeker
 type Reader struct {
 	in           []byte
-	cache        byte // unread bits are stored here
-	bits         byte // number of unread bits in cache
-	r, w         int  // buf read and write positions
+	cache        byte  // unread bits are stored here
+	bits         byte  // number of unread bits in cache
+	r, w         int64 // buf read and write positions
 	err          error
 	lastByte     int
 	lastRuneSize int
@@ -33,7 +40,7 @@ func NewReader(p []byte) *Reader {
 }
 
 func (r *Reader) readBufferByte() (b byte, err error) {
-	if r.r >= len(r.in) {
+	if r.r >= int64(len(r.in)) {
 		return 0, io.EOF
 	}
 	r.lastRuneSize = -1
@@ -112,7 +119,18 @@ func (r *Reader) readUnalignedByte() (b byte, err error) {
 	return
 }
 
+// ReadBin reads the next binary value from the current cache
+// Equivalent of ReadBool method
+func (r *Reader) ReadBit() (b bool, err error) {
+	return r.readBool()
+}
+
+// ReadBool reads the next binary value from the current cache
 func (r *Reader) ReadBool() (b bool, err error) {
+	return r.readBool()
+}
+
+func (r *Reader) readBool() (b bool, err error) {
 	if r.bits == 0 {
 		r.cache, err = r.readBufferByte()
 		if err != nil {
@@ -133,4 +151,28 @@ func (r *Reader) Align() (skipped byte) {
 	skipped = r.bits
 	r.bits = 0 // no need to clear cache, will be overwritten on next read
 	return
+}
+
+// Seek implements the io.Seeker interface
+func (r *Reader) Seek(offset int64, whence int) (int64, error) {
+	r.lastRuneSize = -1
+
+	var abs int64
+
+	switch whence {
+	case io.SeekStart:
+		abs = offset
+	case io.SeekCurrent:
+		abs = r.r + offset
+	case io.SeekEnd:
+		abs = int64(len(r.in)) + offset
+	default:
+		return 0, errors.New("bitio.Reader.Seek: invalid whence")
+	}
+
+	if abs < 0 {
+		return 0, errors.New("bitio.Reader.Seek: negative position")
+	}
+	r.r = abs
+	return abs, nil
 }

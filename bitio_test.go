@@ -76,6 +76,56 @@ func TestWriter(t *testing.T) {
 	eq(true, bytes.Equal(b.Bytes(), expected))
 }
 
+func TestSeeker(t *testing.T) {
+
+	eq := mighty.Eq(t)
+
+	data := []byte{3, 255, 0xcc, 0x1a, 0xbc, 0xde, 0x80, 0x01, 0x02, 0xf8, 0x08, 0xf0}
+
+	t.Run("SeekStart", func(t *testing.T) {
+		t.Run("Valid", func(t *testing.T) {
+			r := NewReader(data)
+			r.Seek(3, io.SeekStart)
+			b, err := r.ReadByte()
+			eq(nil, err)
+			eq(data[3], b)
+		})
+		t.Run("Invalid", func(t *testing.T) {
+			r := NewReader(data)
+			_, err := r.Seek(int64(len(data)+1), io.SeekStart)
+			mighty.Eq(t)(nil, err)
+
+			_, err = r.ReadByte()
+			eq(io.EOF, err)
+		})
+	})
+	t.Run("SeekCurrent", func(t *testing.T) {
+		r := NewReader(data)
+
+		_, err := r.ReadByte()
+		eq(nil, err)
+
+		_, err = r.Seek(int64(2), io.SeekCurrent)
+		eq(nil, err)
+
+		b, err := r.ReadByte()
+		eq(nil, err)
+
+		eq(data[2+1], b)
+	})
+	t.Run("SeekEnd", func(t *testing.T) {
+		r := NewReader(data)
+
+		_, err := r.Seek(int64(-1), io.SeekEnd)
+		eq(nil, err)
+
+		b, err := r.ReadByte()
+		eq(nil, err)
+		eq(data[len(data)-1], b)
+	})
+
+}
+
 func TestReaderEOF(t *testing.T) {
 	eq := mighty.Eq(t)
 
